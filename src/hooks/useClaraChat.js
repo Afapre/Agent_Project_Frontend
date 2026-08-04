@@ -1,31 +1,54 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  createChat,
+  createUser,
+  deleteChat,
+  listMessages,
+  listUserChats,
+  sendChatMessage,
+  updateMessageFeedback,
+  getUser,
+  loginUser,
+  deleteUser,
+} from '../api/claraApi';
 
-// Dynamically reads the endpoint value from environment variables file
-const CHAT_ENDPOINT = process.env.REACT_APP_CHAT_ENDPOINT;
-
-/**
- * Custom React Hook to manage CLARA chat state, memory, and API pipelines.
- * Includes explicit loading states to prevent input spam during generation phases.
- */
 export function useClaraChat() {
-  // Array state storing all active user, assistant, and error message objects
   const [messages, setMessages] = useState([]);
-  
-  // String state storing text currently typed inside the text input box
-  const [input, setInput] = useState("");
-  
-  // Boolean state tracking whether the AI agent is actively processing a request
+  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
-  // React Reference pointing directly to the chat window DOM node for scroll management
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('clara_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const setAuthModeAndClearStatus = (mode) => {
+    setAuthMode(mode);
+    setStatusMessage(''); // Clears out lingering messages when switching views
+  };
+
+  const [chats, setChats] = useState([]);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [newChatTitle, setNewChatTitle] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
   const chatBoxRef = useRef(null);
 
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('clara_user', JSON.stringify(user));
+      loadChats(user.id);
+    } else {
+      localStorage.removeItem('clara_user');
+    }
+  }, [user]);
 
-
-  /**
-   * Side Effect Hook: Automatically triggers every time the messages array updates.
-   * Forces the chat display panel to smoothly scroll down to display the latest message.
-   */
   useEffect(() => {
     if (chatBoxRef.current) {
       chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
@@ -33,95 +56,266 @@ export function useClaraChat() {
   }, [messages]);
 
 
+  // const handleLogin = async (event) => {
+  //   event.preventDefault();
+  //   if (!loginUserId.trim()) return;
 
-  /**
-   * Main function to package conversation history and dispatch payloads to the backend API.
-   */
-  const handleSend = async () => {
-    // Trim stray spaces from user input to prevent empty transmissions
-    const trimmedInput = input.trim();
-    
-    // Safety check: Prevent sending if the input is empty OR if an operation is already running
-    if (!trimmedInput || isLoading) return;
+  //   try {
+  //     const fetchedUser = await getUser(loginUserId.trim());
+  //     setUser(fetchedUser);
+  //     setLoginUserId('');
+  //     setStatusMessage(`Welcome back, ${fetchedUser.name}!`);
+  //     await loadChats(fetchedUser.id);
+  //   } catch (error) {
+  //     setStatusMessage(error.message || 'User not found. Please check your User ID.');
+  //   }
+  // };
 
-    // Turn on the loading state to lock inputs and indicate the AI is processing
-    setIsLoading(true);
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    if (!email.trim() || !password.trim()) return;
+    try {
+      const loggedInUser = await loginUser(email.trim(), password.trim());
+      setUser(loggedInUser);
+      setEmail('');
+      setPassword('');
+      setStatusMessage(`Welcome back, ${loggedInUser.first_name || loggedInUser.name}!`);
+      await loadChats(loggedInUser.id);
+    } catch (error) {
+      setStatusMessage(error.message || 'Invalid credentials.');
+    }
+  };
 
-    // Instantly append user text to the chat screen array to show responsiveness
-    const updatedMessages = [...messages, { role: "user", content: trimmedInput }];
-    setMessages(updatedMessages);
-    
-    // Clear out the text box immediately so the user can prepare their next message
-    setInput("");
+  const handleRegister = async (event) => {
+    event.preventDefault();
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim() || !dateOfBirth) return;
+    try {
+      await createUser(
+        firstName.trim(), 
+        lastName.trim(), 
+        email.trim(), 
+        password.trim(), 
+        dateOfBirth 
+      );
+      // Clear registration form
+      setFirstName('');
+      setLastName('');
+      setEmail('');
+      setPassword('');
+      setDateOfBirth('');
+      
+      // Switch to login mode and show success banner
+      setAuthMode('login');
+      setStatusMessage('Account successfully created! Please enter your email and password to log in.');
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to create account.');
+    }
+  };
+  //    setUser(createdUser);
+  //    setFirstName('');
+  //    setLastName('');
+  //    setEmail('');
+  //    setPassword('');
+  //    setDateOfBirth('');
+  //    setStatusMessage(`Account created! Welcome ${createdUser.name || firstName}!`);
+  //    await loadChats(createdUser.id);
+  //  } catch (error) {
+  //    setStatusMessage(error.message || 'Unable to create account.');
+  //  }
+  // };
 
-    // Memory Guard: Filter out any past network error blocks so they don't pollute LangChain memory
-    const historyPayload = messages.filter(msg => msg.role !== 'error'&& 
-      !msg.content.includes("Sorry can't process that request"));
+  // 
+  const handleLogout = () => {
+    setUser(null);
+    setChats([]);
+    setMessages([]);
+    setActiveChatId(null);
+    localStorage.removeItem('clara_user');
+    setAuthMode('login');
+    setStatusMessage('Successfully logged out. Enter your credentials below to log back in.');
+  };
+
+  const handleDeleteAccount = async (userId) => {
+    try {
+      await deleteUser(userId);
+      setUser(null);
+      setChats([]);
+      setMessages([]);
+      setActiveChatId(null);
+      localStorage.removeItem('clara_user');
+      setAuthMode('login');
+      setStatusMessage('Your account has been successfully deleted.');
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to delete account.');
+    }
+  };
+
+  const loadChats = async (currentUserId) => {
+    try {
+      const nextChats = await listUserChats(currentUserId);
+      setChats(nextChats);
+      setActiveChatId((current) => current || nextChats[0]?.id || null);
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to load chats.');
+    }
+  };
+
+  const loadMessages = async (chatId) => {
+    if (!chatId) {
+      setMessages([]);
+      return;
+    }
 
     try {
-      /**
-       * Execute a network POST fetch request to your FastAPI backend server.
-       * Node's --env-file flag reads your main folder's .env file and assigns it to process.env.
-       */
-      const response = await fetch(CHAT_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          prompt: trimmedInput, 
-          history: historyPayload 
-        })
+      const nextMessages = await listMessages(chatId);
+      const uiMessages = nextMessages.map((message) => ({
+        id: message.id,
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: message.content,
+        is_liked: message.is_liked,
+        audio: null,
+      }));
+      setMessages(uiMessages);
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to load messages.');
+    }
+  };
+
+  useEffect(() => {
+    if (activeChatId) {
+      loadMessages(activeChatId);
+    }
+  }, [activeChatId]);
+
+  
+  const handleCreateChat = async (event) => {
+    event.preventDefault();
+    if (!user || !newChatTitle.trim()) return;
+
+    try {
+      const chat = await createChat(user.id, newChatTitle.trim());
+      setChats((current) => [chat, ...current]);
+      setActiveChatId(chat.id);
+      setMessages([]);
+      setNewChatTitle('');
+      setStatusMessage(''); // Cleared from chat window to prevent persistent status messaging overhead
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to create chat.');
+    }
+  };
+
+  const handleDeleteChat = async (chatId) => {
+    if (!user) return;
+
+    try {
+      await deleteChat(chatId);
+      const nextChats = chats.filter((chat) => chat.id !== chatId);
+      setChats(nextChats);
+      if (activeChatId === chatId) {
+        setActiveChatId(nextChats[0]?.id || null);
+      }
+      setStatusMessage('');
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to delete chat.');
+    }
+  };
+
+  const handleFeedback = async (messageId, isLiked) => {
+    try {
+      const updatedMessage = await updateMessageFeedback(messageId, isLiked);
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === updatedMessage.id ? { ...message, is_liked: updatedMessage.is_liked } : message
+        )
+      );
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to save feedback.');
+    }
+  };
+
+  const handleSend = async () => {
+    const trimmedInput = input.trim();
+    if (!trimmedInput || isLoading || !user) return;
+
+    setIsLoading(true);
+    const updatedMessages = [...messages, { role: 'user', content: trimmedInput }];
+    setMessages(updatedMessages);
+    setInput('');
+
+    try {
+      const response = await sendChatMessage({
+        userId: user.id,
+        chatId: activeChatId,
+        prompt: trimmedInput,
+        title: newChatTitle || 'New chat',
+        history: messages.filter((message) => message.role !== 'error'),
       });
 
-      // If server returns HTTP 200 Success, extract the data and render it
-      if (response.ok) {
-        const data = await response.json();
-        const claraReply = data.response || "";
-        const audioBase64 = data.audio; // Grab the Base64 audio string
+      const assistantMessage = {
+        id: response.message_id,
+        role: 'assistant',
+        content: response.response,
+        is_liked: null,
+        audio: response.audio || null,
+      };
 
-        // 1. Compile the complete assistant message payload block
-        const newAssistantMessage = { 
-          role: "assistant", 
-          content: claraReply,
-          audio: audioBase64 
-        };
+      setMessages([...updatedMessages, assistantMessage]);
+      if (response.chat_id) {
+        setActiveChatId(response.chat_id);
+        setChats((current) => {
+          if (current.some((chat) => chat.id === response.chat_id)) {
+            return current;
+          }
 
-        // 2. Append the message to the UI state array cleanly
-        setMessages([...updatedMessages, newAssistantMessage]);
-
-        // 3. --- TRIGGER AUTOMATIC AUDIO PLAYBACK ---
-        if (audioBase64) {
-          // Wrap in a tiny timeout to let the HTML element mount to the screen first
-          setTimeout(() => {
-            // Find the play button belonging to this message and trigger a click programmatically
-            const playButtons = document.querySelectorAll('.play-audio-btn');
-            if (playButtons.length > 0) {
-              const latestBtn = playButtons[playButtons.length - 1];
-              latestBtn.click();
-            }
-          }, 50);
-        }
-
-        // Secure History Control Evaluation Block
-        if (claraReply === "Sorry can't process that request for safety reasons.") {
-          // Do not append unsafe interactions to chat history tracking memory
-        } else {
-          messages.push({ role: "user", content: trimmedInput });
-          messages.push({ role: "assistant", content: claraReply });
-        }
+          return [
+            { id: response.chat_id, user_id: user.id, title: newChatTitle || 'New chat', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+            ...current,
+          ];
+        });
       }
-        else {
-        if (response.status===403){setMessages([...updatedMessages, { role: "error", content: "Sorry, can't process that request for safety reasons." }]);}
-      else {
-        setMessages([...updatedMessages, { role: "error", content: "❌ Backend Error: Unable to fetch response." }]);}
-      }
+      await loadChats(user.id);
     } catch (error) {
-      if (error.status_code===403){setMessages([...updatedMessages, { role: "error", content: "Sorry, can't process that request for safety reasons." }]);}
-      else {setMessages([...updatedMessages, { role: "error", content: "🔌 Connection Failure: Server unreachable." }]);}
+      setMessages([...updatedMessages, { role: 'error', content: error.message || 'Unable to reach backend.' }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Expose the state variables and handler functions to visual components
-  return { messages, input, setInput, handleSend, chatBoxRef, isLoading };
+  return {
+    messages,
+    input,
+    setInput,
+    handleSend,
+    chatBoxRef,
+    isLoading,
+    user,
+    handleLogin,
+    handleRegister,
+    handleLogout,
+    email,
+    setEmail,
+    password,
+    setPassword,
+    firstName,
+    setFirstName,
+    lastName,
+    setLastName,
+    dateOfBirth,
+    setDateOfBirth,
+    chats,
+    activeChatId,
+    setActiveChatId,
+    newChatTitle,
+    setNewChatTitle,
+    handleCreateChat,
+    handleDeleteChat,
+    handleFeedback,
+    statusMessage,
+    setStatusMessage,
+    authMode,
+    setAuthMode: setAuthModeAndClearStatus,
+    handleDeleteAccount,
+    showDeleteModal,
+    setShowDeleteModal,
+  };
 }
