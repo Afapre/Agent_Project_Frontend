@@ -88,3 +88,10 @@ export async function updateMessageFeedback(messageId, isLiked) {
 export async function deleteUser(userId) {
   return request(`/api/v1/chat/users/${userId}`, { method: 'DELETE' });
 }
+
+export async function updateChatTitle(chatId, title) {
+  return request(`/api/v1/chat/chats/${chatId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  });
+}

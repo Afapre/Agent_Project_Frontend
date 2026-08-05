@@ -7,15 +7,16 @@ import {
   listUserChats,
   sendChatMessage,
   updateMessageFeedback,
-  getUser,
   loginUser,
   deleteUser,
+  updateChatTitle,
 } from '../api/claraApi';
 
 export function useClaraChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [user, setUser] = useState(() => {
@@ -23,22 +24,27 @@ export function useClaraChat() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const setAuthModeAndClearStatus = (mode) => {
-    setAuthMode(mode);
-    setStatusMessage(''); // Clears out lingering messages when switching views
-  };
-
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  
   const [newChatTitle, setNewChatTitle] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const chatBoxRef = useRef(null);
+
+  const setAuthModeAndClearStatus = (mode) => {
+    setAuthMode(mode);
+    setStatusMessage('');
+    setPassword('');
+    setConfirmPassword('');
+  };
 
   useEffect(() => {
     if (user) {
@@ -53,27 +59,13 @@ export function useClaraChat() {
     if (chatBoxRef.current) {
       chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
     }
-  }, [messages]);
-
-
-  // const handleLogin = async (event) => {
-  //   event.preventDefault();
-  //   if (!loginUserId.trim()) return;
-
-  //   try {
-  //     const fetchedUser = await getUser(loginUserId.trim());
-  //     setUser(fetchedUser);
-  //     setLoginUserId('');
-  //     setStatusMessage(`Welcome back, ${fetchedUser.name}!`);
-  //     await loadChats(fetchedUser.id);
-  //   } catch (error) {
-  //     setStatusMessage(error.message || 'User not found. Please check your User ID.');
-  //   }
-  // };
+  }, [messages, isLoading]);
 
   const handleLogin = async (event) => {
     event.preventDefault();
     if (!email.trim() || !password.trim()) return;
+    setIsAuthLoading(true);
+    setStatusMessage('');
     try {
       const loggedInUser = await loginUser(email.trim(), password.trim());
       setUser(loggedInUser);
@@ -82,13 +74,28 @@ export function useClaraChat() {
       setStatusMessage(`Welcome back, ${loggedInUser.first_name || loggedInUser.name}!`);
       await loadChats(loggedInUser.id);
     } catch (error) {
-      setStatusMessage(error.message || 'Invalid credentials.');
+      setStatusMessage(error.message || 'Invalid email or password.');
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
   const handleRegister = async (event) => {
     event.preventDefault();
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim() || !dateOfBirth) return;
+    
+    if (password.length < 8) {
+      setStatusMessage('Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setStatusMessage('Passwords do not match. Please re-confirm password.');
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setStatusMessage('');
     try {
       await createUser(
         firstName.trim(), 
@@ -97,34 +104,23 @@ export function useClaraChat() {
         password.trim(), 
         dateOfBirth 
       );
-      // Clear registration form
+      
       setFirstName('');
       setLastName('');
       setEmail('');
       setPassword('');
+      setConfirmPassword('');
       setDateOfBirth('');
       
-      // Switch to login mode and show success banner
       setAuthMode('login');
-      setStatusMessage('Account successfully created! Please enter your email and password to log in.');
+      setStatusMessage('Account successfully created! Please enter your credentials to log in.');
     } catch (error) {
       setStatusMessage(error.message || 'Unable to create account.');
+    } finally {
+      setIsAuthLoading(false);
     }
   };
-  //    setUser(createdUser);
-  //    setFirstName('');
-  //    setLastName('');
-  //    setEmail('');
-  //    setPassword('');
-  //    setDateOfBirth('');
-  //    setStatusMessage(`Account created! Welcome ${createdUser.name || firstName}!`);
-  //    await loadChats(createdUser.id);
-  //  } catch (error) {
-  //    setStatusMessage(error.message || 'Unable to create account.');
-  //  }
-  // };
 
-  // 
   const handleLogout = () => {
     setUser(null);
     setChats([]);
@@ -132,7 +128,7 @@ export function useClaraChat() {
     setActiveChatId(null);
     localStorage.removeItem('clara_user');
     setAuthMode('login');
-    setStatusMessage('Successfully logged out. Enter your credentials below to log back in.');
+    setStatusMessage('Successfully logged out.');
   };
 
   const handleDeleteAccount = async (userId) => {
@@ -187,18 +183,19 @@ export function useClaraChat() {
     }
   }, [activeChatId]);
 
-  
   const handleCreateChat = async (event) => {
-    event.preventDefault();
-    if (!user || !newChatTitle.trim()) return;
+    if (event && event.preventDefault) event.preventDefault();
+    if (!user) return;
 
     try {
-      const chat = await createChat(user.id, newChatTitle.trim());
+      const titleToUse = newChatTitle.trim() || 'New chat';
+      const chat = await createChat(user.id, titleToUse);
       setChats((current) => [chat, ...current]);
       setActiveChatId(chat.id);
       setMessages([]);
       setNewChatTitle('');
-      setStatusMessage(''); // Cleared from chat window to prevent persistent status messaging overhead
+      setStatusMessage('');
+      return chat;
     } catch (error) {
       setStatusMessage(error.message || 'Unable to create chat.');
     }
@@ -220,6 +217,20 @@ export function useClaraChat() {
     }
   };
 
+  const handleRenameChat = async (chatId, newTitle) => {
+    if (!newTitle.trim()) return;
+    try {
+      await updateChatTitle(chatId, newTitle.trim());
+      setChats((current) =>
+        current.map((chat) =>
+          chat.id === chatId ? { ...chat, title: newTitle.trim() } : chat
+        )
+      );
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to rename chat.');
+    }
+  };
+
   const handleFeedback = async (messageId, isLiked) => {
     try {
       const updatedMessage = await updateMessageFeedback(messageId, isLiked);
@@ -238,6 +249,23 @@ export function useClaraChat() {
     if (!trimmedInput || isLoading || !user) return;
 
     setIsLoading(true);
+    let currentChatId = activeChatId;
+
+    // If there is no active chat session yet, create one on the fly automatically
+    if (!currentChatId) {
+      try {
+        const titleToUse = trimmedInput.length > 30 ? `${trimmedInput.substring(0, 30)}...` : trimmedInput;
+        const newChat = await createChat(user.id, titleToUse);
+        currentChatId = newChat.id;
+        setActiveChatId(currentChatId);
+        setChats((current) => [newChat, ...current]);
+      } catch (error) {
+        setMessages((current) => [...current, { role: 'error', content: error.message || 'Unable to create chat session.' }]);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     const updatedMessages = [...messages, { role: 'user', content: trimmedInput }];
     setMessages(updatedMessages);
     setInput('');
@@ -245,9 +273,9 @@ export function useClaraChat() {
     try {
       const response = await sendChatMessage({
         userId: user.id,
-        chatId: activeChatId,
+        chatId: currentChatId,
         prompt: trimmedInput,
-        title: newChatTitle || 'New chat',
+        title: chats.find(c => c.id === currentChatId)?.title || 'New chat',
         history: messages.filter((message) => message.role !== 'error'),
       });
 
@@ -260,19 +288,6 @@ export function useClaraChat() {
       };
 
       setMessages([...updatedMessages, assistantMessage]);
-      if (response.chat_id) {
-        setActiveChatId(response.chat_id);
-        setChats((current) => {
-          if (current.some((chat) => chat.id === response.chat_id)) {
-            return current;
-          }
-
-          return [
-            { id: response.chat_id, user_id: user.id, title: newChatTitle || 'New chat', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-            ...current,
-          ];
-        });
-      }
       await loadChats(user.id);
     } catch (error) {
       setMessages([...updatedMessages, { role: 'error', content: error.message || 'Unable to reach backend.' }]);
@@ -288,6 +303,7 @@ export function useClaraChat() {
     handleSend,
     chatBoxRef,
     isLoading,
+    isAuthLoading,
     user,
     handleLogin,
     handleRegister,
@@ -296,6 +312,8 @@ export function useClaraChat() {
     setEmail,
     password,
     setPassword,
+    confirmPassword,
+    setConfirmPassword,
     firstName,
     setFirstName,
     lastName,
@@ -309,6 +327,7 @@ export function useClaraChat() {
     setNewChatTitle,
     handleCreateChat,
     handleDeleteChat,
+    handleRenameChat,
     handleFeedback,
     statusMessage,
     setStatusMessage,

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
-import { Send } from 'lucide-react';
+import { Send, Trash2, LogOut, MessageSquare, Sparkles, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X } from 'lucide-react';
 import { useClaraChat } from '../hooks/useClaraChat';
 
 export default function ChatWindow() {
@@ -12,12 +12,15 @@ export default function ChatWindow() {
     handleSend,
     chatBoxRef,
     isLoading,
+    isAuthLoading,
     user,
     handleLogin,
     email,
     setEmail,
     password,
     setPassword,
+    confirmPassword,
+    setConfirmPassword,
     firstName,
     setFirstName,
     lastName,
@@ -27,10 +30,9 @@ export default function ChatWindow() {
     chats,
     activeChatId,
     setActiveChatId,
-    newChatTitle,
-    setNewChatTitle,
     handleCreateChat,
     handleDeleteChat,
+    handleRenameChat,
     handleFeedback,
     statusMessage,
     setStatusMessage,
@@ -45,6 +47,12 @@ export default function ChatWindow() {
 
   const [playingIndex, setPlayingIndex] = useState(null);
   const [currentAudio, setCurrentAudio] = useState(null);
+  const [chatToDelete, setChatToDelete] = useState(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [editingChatId, setEditingChatId] = useState(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
+  
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -54,109 +62,145 @@ export default function ChatWindow() {
     };
   }, [currentAudio]);
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 140)}px`;
+    }
+  }, [input]);
+
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       handleSend();
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
   };
 
-  // if (!user) {
-  //   return (
-  //     <div className="auth-card">
-  //       <div className="auth-card__header">
-  //         <h1>🤖 CLARA</h1>
-  //         <p>Sign in to start chatting with your procurement assistant.</p>
-  //       </div>
-  //       <form onSubmit={handleLogin} className="auth-form">
-  //         <label>
-  //           Name
-  //           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name" />
-  //         </label>
-  //         <label>
-  //           Email
-  //           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Enter your email" />
-  //         </label>
-  //         <button type="submit">Continue</button>
-  //       </form>
-  //       {statusMessage && <p className="status-message">{statusMessage}</p>}
-  //     </div>
-  //   );
-  // }
-
+  // --- Authentication Full-Screen View ---
   if (!user) {
     return (
-      <div className="app-container">
-        <div className="auth-card">
-          {/* Status Message placed neatly at the top of the auth wrapper */}
-          {statusMessage && (
-            <div className={`mb-6 p-4 rounded-xl text-sm font-medium transition-all duration-300 shadow-sm flex items-center justify-between ${
-              statusMessage.includes('Successfully') || statusMessage.includes('created') || statusMessage.includes('Welcome')
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
-                : 'bg-blue-50 text-blue-800 border border-blue-200'
-            }`}>
-              <span>{statusMessage}</span>
-              <button 
-                onClick={() => setStatusMessage('')} 
-                className="ml-4 text-gray-400 hover:text-gray-600 font-bold"
-              >
-                &times;
-              </button>
+      <div className="auth-viewport">
+        <div className="auth-glass-card animate-fade-in">
+          <div className="auth-header-brand">
+            <div className="brand-icon-wrapper">
+              <Sparkles className="w-7 h-7 text-indigo-600" />
             </div>
-          )}
-
-          <div className="auth-card__header">
-            <h1>🤖 CLARA</h1>
+            <h1>CLARA</h1>
             <p>
               {authMode === 'register' 
-                ? 'Create an account below to start chatting.' 
-                : 'Enter your credentials below to log back in.'}
+                ? 'Enter your details to create your CLARA account' 
+                : 'Sign in to access your CLARA workspace'}
             </p>
           </div>
 
+          {statusMessage && (
+            <div className={`status-banner ${
+              statusMessage.includes('Successfully') || statusMessage.includes('created') || statusMessage.includes('Welcome')
+                ? 'status-success' 
+                : 'status-error'
+            }`}>
+              <span>{statusMessage}</span>
+              <button onClick={() => setStatusMessage('')} className="status-close-btn">&times;</button>
+            </div>
+          )}
+
           {authMode === 'register' ? (
-            <form onSubmit={handleRegister} className="auth-form">
-              <label>
-                First Name
-                <input value={firstName} onChange={(event) => { setFirstName(event.target.value); setStatusMessage(''); }} placeholder="First name" required />
+            <form onSubmit={handleRegister} className="auth-form-grid">
+              <div className="input-row-group">
+                <label className="input-field-block">
+                  <span>First Name</span>
+                  <input 
+                    value={firstName} 
+                    onChange={(e) => { setFirstName(e.target.value); setStatusMessage(''); }} 
+                    placeholder="John" 
+                    required 
+                  />
+                </label>
+                <label className="input-field-block">
+                  <span>Last Name</span>
+                  <input 
+                    value={lastName} 
+                    onChange={(e) => { setLastName(e.target.value); setStatusMessage(''); }} 
+                    placeholder="Doe" 
+                    required 
+                  />
+                </label>
+              </div>
+              
+              <label className="input-field-block">
+                <span>Email Address</span>
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={(e) => { setEmail(e.target.value); setStatusMessage(''); }} 
+                  placeholder="name@company.com" 
+                  required 
+                />
               </label>
-              <label>
-                Last Name
-                <input value={lastName} onChange={(event) => { setLastName(event.target.value); setStatusMessage(''); }} placeholder="Last name" required />
+              
+              <div className="input-row-group">
+                <label className="input-field-block">
+                  <span>Password (min 8 chars)</span>
+                  <input 
+                    type="password" 
+                    value={password} 
+                    onChange={(e) => { setPassword(e.target.value); setStatusMessage(''); }} 
+                    placeholder="••••••••" 
+                    minLength={8}
+                    required 
+                  />
+                </label>
+                <label className="input-field-block">
+                  <span>Confirm Password</span>
+                  <input 
+                    type="password" 
+                    value={confirmPassword} 
+                    onChange={(e) => { setConfirmPassword(e.target.value); setStatusMessage(''); }} 
+                    placeholder="••••••••" 
+                    required 
+                  />
+                </label>
+              </div>
+
+              <label className="input-field-block">
+                <span>Date of Birth</span>
+                <input 
+                  type="date" 
+                  value={dateOfBirth} 
+                  onChange={(e) => { setDateOfBirth(e.target.value); setStatusMessage(''); }} 
+                  required 
+                />
               </label>
-              <label>
-                Email
-                <input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setStatusMessage(''); }} placeholder="Email address" required />
-              </label>
-              <label>
-                Password
-                <input type="password" value={password} onChange={(event) => { setPassword(event.target.value); setStatusMessage(''); }} placeholder="Password" required />
-              </label>
-              <label>
-                Date of Birth
-                <input type="date" value={dateOfBirth} onChange={(event) => { setDateOfBirth(event.target.value); setStatusMessage(''); }} required />
-              </label>
-              <button type="submit">Create Account</button>
+              
+              <button type="submit" className="primary-action-btn" disabled={isAuthLoading}>
+                {isAuthLoading ? <span className="spinner-center"></span> : 'Create Account'}
+              </button>
             </form>
           ) : (
-            <form onSubmit={handleLogin} className="auth-form">
-              <label>
-                Email
-                <input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setStatusMessage(''); }} placeholder="Email address" required />
+            <form onSubmit={handleLogin} className="auth-form-grid">
+              <label className="input-field-block">
+                <span>Email Address</span>
+                <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setStatusMessage(''); }} placeholder="name@company.com" required />
               </label>
-              <label>
-                Password
-                <input type="password" value={password} onChange={(event) => { setPassword(event.target.value); setStatusMessage(''); }} placeholder="Password" required />
+              <label className="input-field-block">
+                <span>Password</span>
+                <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setStatusMessage(''); }} placeholder="••••••••" required />
               </label>
-              <button type="submit">Sign In</button>
+              
+              <button type="submit" className="primary-action-btn" disabled={isAuthLoading}>
+                {isAuthLoading ? <span className="spinner-center"></span> : 'Sign In'}
+              </button>
             </form>
           )}
 
-          <div className="auth-switch">
+          <div className="auth-switch-prompt">
             {authMode === 'register' ? (
-              <p>Already have an account? <button type="button" className="text-link-btn" onClick={() => setAuthMode('login')}>Sign In</button></p>
+              <p>Already have an account? <button type="button" className="text-link-action" onClick={() => { setAuthMode('login'); setEmail('');setPassword('');setStatusMessage(''); }}>Sign In</button></p>
             ) : (
-              <p>New to Clara? <button type="button" className="text-link-btn" onClick={() => setAuthMode('register')}>Create Account</button></p>
+              <p>New to CLARA? <button type="button" className="text-link-action" onClick={() => { setAuthMode('register'); setEmail('');setPassword('');setStatusMessage(''); }}>Create Account</button></p>
             )}
           </div>
         </div>
@@ -164,156 +208,267 @@ export default function ChatWindow() {
     );
   }
 
+  // --- Main Full-Screen Application Chat View ---
   return (
-    <div className="chat-shell">
-      <aside className="sidebar">
-        <div className="sidebar__header">
-          <h2>CLARA</h2>
-          <p>{user.first_name || user.name}</p>
-          <div className="sidebar-actions">
-            <button onClick={handleLogout} className="logout-btn">Log Out</button>
-            <button onClick={() => setShowDeleteModal(true)} className="delete-account-btn">Delete Account</button>
+    <div className="app-viewport-shell">
+      <aside className="app-sidebar">
+        <div className="sidebar-top-section">
+          <div className="sidebar-brand">
+            <div className="brand-logo-small">
+              <Sparkles className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h2>CLARA</h2>
+              <span className="user-profile-badge">{user.first_name || user.name || 'User'}'s Workspace</span>
+            </div>
           </div>
 
-          {showDeleteModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-100 transform transition-all">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Account</h3>
-                <p className="text-sm text-gray-600 mb-6">
-                  Are you sure you want to permanently delete your account? All your chats and history will be lost. This action cannot be undone.
-                </p>
-                <div className="flex items-center justify-end space-x-3">
-                  <button
-                    onClick={() => setShowDeleteModal(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-                  >
-                    No, Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDeleteModal(false);
-                      handleDeleteAccount(user.id);
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-sm transition-colors"
-                  >
-                    Yes, Delete Account
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <button 
+            type="button" 
+            className="new-chat-action-btn"
+            onClick={handleCreateChat}
+          >
+            <Plus size={16} />
+            <span>Add New Chat</span>
+          </button>
         </div>
 
-        <form onSubmit={handleCreateChat} className="chat-create-form">
-          <input
-            value={newChatTitle}
-            onChange={(event) => setNewChatTitle(event.target.value)}
-            placeholder="New chat title"
-          />
-          <button type="submit">Create</button>
-        </form>
+        <div className="sidebar-section-title">Chat History</div>
 
-        <div className="chat-list">
+        <div className="chat-history-list">
           {chats.map((chat) => (
-            <div key={chat.id} className={`chat-list-item ${chat.id === activeChatId ? 'active' : ''}`}>
-              <button type="button" onClick={() => setActiveChatId(chat.id)}>
-                {chat.title || 'Untitled chat'}
-              </button>
-              <button type="button" className="delete-chat-btn" onClick={() => handleDeleteChat(chat.id)}>
-                ×
-              </button>
+            <div key={chat.id} className={`chat-item-row ${chat.id === activeChatId ? 'active' : ''}`}>
+              {editingChatId === chat.id ? (
+                <div className="chat-rename-inline-box" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={editingTitleValue}
+                    onChange={(e) => setEditingTitleValue(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (editingTitleValue.trim()) {
+                          handleRenameChat(chat.id, editingTitleValue.trim());
+                        }
+                        setEditingChatId(null);
+                      } else if (e.key === 'Escape') {
+                        setEditingChatId(null);
+                      }
+                    }}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (editingTitleValue.trim()) {
+                        handleRenameChat(chat.id, editingTitleValue.trim());
+                      }
+                      setEditingChatId(null);
+                    }} 
+                    className="rename-save-btn"
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingChatId(null);
+                    }} 
+                    className="rename-cancel-btn"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button type="button" className="chat-select-btn" onClick={() => setActiveChatId(chat.id)}>
+                    <MessageSquare size={15} />
+                    <span className="chat-title-text">{chat.title || 'Untitled chat'}</span>
+                  </button>
+                  <div className="chat-item-actions">
+                    <button 
+                      type="button" 
+                      className="chat-action-icon-trigger" 
+                      onClick={(e) => { e.stopPropagation(); setEditingChatId(chat.id); setEditingTitleValue(chat.title || ''); }} 
+                      title="Rename chat"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button 
+                      type="button" 
+                      className="chat-action-icon-trigger delete-trigger" 
+                      onClick={(e) => { e.stopPropagation(); setChatToDelete(chat.id); }} 
+                      title="Delete chat"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
+
+        <div className="sidebar-footer-actions">
+          <button onClick={() => setShowLogoutModal(true)} className="footer-btn logout-action">
+            <LogOut size={15} /> Sign Out
+          </button>
+          <button onClick={() => setShowDeleteModal(true)} className="footer-btn delete-account-action" title="Delete Account">
+            <UserX size={15} />
+          </button>
+        </div>
       </aside>
 
-      <div className="chat-container">
-        <header>
-          <h1>CLARA: AI Purchasing Assistant</h1>
-          <p>Let’s talk about procurement and pricing!</p>
+      {/* Delete Chat Confirmation Modal */}
+      {chatToDelete && (
+        <div className="modal-backdrop">
+          <div className="modal-card animate-scale-in">
+            <h3>Delete Chat?</h3>
+            <p>Are you sure you want to delete this chat history? This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button onClick={() => setChatToDelete(null)} className="modal-cancel-btn">Cancel</button>
+              <button onClick={() => { handleDeleteChat(chatToDelete); setChatToDelete(null); }} className="modal-confirm-btn">Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card animate-scale-in">
+            <h3>Sign Out Confirmation</h3>
+            <p>Are you sure you want to sign out of your CLARA workspace?</p>
+            <div className="modal-actions">
+              <button onClick={() => setShowLogoutModal(false)} className="modal-cancel-btn">Cancel</button>
+              <button onClick={() => { setShowLogoutModal(false); handleLogout(); }} className="modal-confirm-btn primary-confirm">Yes, Sign Out</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account Deletion Modal */}
+      {showDeleteModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card animate-scale-in">
+            <h3>Delete Account Permanently?</h3>
+            <p>
+              Are you sure you want to permanently delete your account? All your chats, pricing workflows, and history will be lost. This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setShowDeleteModal(false)} className="modal-cancel-btn">
+                Cancel
+              </button>
+              <button onClick={() => { setShowDeleteModal(false); handleDeleteAccount(user.id); }} className="modal-confirm-btn">
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="chat-main-container">
+        <header className="chat-header-bar">
+          <div className="header-title-wrapper">
+            <h1>CLARA: AI Procurement Assistant</h1>
+            <p>An Advanced Procurement Processes Navigation Guide!</p>
+          </div>
         </header>
 
-        <div className="chat-box" ref={chatBoxRef}>
+        <div className="chat-messages-box" ref={chatBoxRef}>
+          {messages.length === 0 && (
+            <div className="chat-welcome-placeholder">
+              <Sparkles className="w-12 h-12 text-indigo-400 mb-3 animate-pulse" />
+              <h3>How can I assist with your procurement needs today?</h3>
+              {/* <p>Ask about supplier pricing benchmarks, draft negotiation strategies, or analyze contracts.</p> */}
+            </div>
+          )}
+
           {messages.map((msg, index) => (
-            <div key={msg.id || `${msg.role}-${index}`} className={`message ${msg.role}`}>
-              {msg.role === 'assistant' ? (
-                <ReactMarkdown rehypePlugins={[rehypeRaw]}>{msg.content}</ReactMarkdown>
-              ) : (
-                msg.content
-              )}
+            <div key={msg.id || `${msg.role}-${index}`} className={`message-bubble-row ${msg.role}`}>
+              <div className="message-content-wrapper">
+                {msg.role === 'assistant' ? (
+                  <div className="markdown-body">
+                    <ReactMarkdown rehypePlugins={[rehypeRaw]}>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="plain-user-text">{msg.content}</div>
+                )}
 
-              {msg.role === 'assistant' && msg.audio && (
-                <button
-                  type="button"
-                  className="play-audio-btn"
-                  onClick={() => {
-                    const isThisActive = playingIndex === index;
-
-                    if (isThisActive && currentAudio) {
-                      currentAudio.pause();
-                      setPlayingIndex(null);
-                    } else {
-                      if (currentAudio && currentAudio.src.includes(`data:audio/wav;base64,${msg.audio}`)) {
-                        setPlayingIndex(index);
-                        currentAudio.play().catch((error) => console.error('Playback error:', error));
+                {msg.role === 'assistant' && msg.audio && (
+                  <button
+                    type="button"
+                    className="audio-player-trigger"
+                    onClick={() => {
+                      const isThisActive = playingIndex === index;
+                      if (isThisActive && currentAudio) {
+                        currentAudio.pause();
+                        setPlayingIndex(null);
                       } else {
-                        if (currentAudio) {
-                          currentAudio.pause();
-                        }
-
+                        if (currentAudio) currentAudio.pause();
                         const audioPlayer = new Audio(`data:audio/wav;base64,${msg.audio}`);
                         audioPlayer.onended = () => {
                           setPlayingIndex(null);
                           setCurrentAudio(null);
                         };
-
                         setCurrentAudio(audioPlayer);
                         setPlayingIndex(index);
-                        audioPlayer.play().catch((error) => console.error('Playback error:', error));
+                        audioPlayer.play().catch((err) => console.error('Playback error:', err));
                       }
-                    }
-                  }}
-                >
-                  {playingIndex === index ? '⏸ Pause' : '🔊 Play'}
-                </button>
-              )}
+                    }}
+                  >
+                    {playingIndex === index ? <Pause size={14} /> : <Volume2 size={14} />}
+                    <span>{playingIndex === index ? 'Pause Voice' : 'Listen'}</span>
+                  </button>
+                )}
 
-              {msg.role === 'assistant' && (
-                <div className="feedback-row">
-                  <button type="button" className={msg.is_liked === true ? 'active-feedback' : ''} onClick={() => handleFeedback(msg.id, true)}>
-                    👍
-                  </button>
-                  <button type="button" className={msg.is_liked === false ? 'active-feedback' : ''} onClick={() => handleFeedback(msg.id, false)}>
-                    👎
-                  </button>
-                </div>
-              )}
+                {msg.role === 'assistant' && (
+                  <div className="feedback-action-row">
+                    <button type="button" className={msg.is_liked === true ? 'liked-active' : ''} onClick={() => handleFeedback(msg.id, true)}>
+                      <ThumbsUp size={13} />
+                    </button>
+                    <button type="button" className={msg.is_liked === false ? 'disliked-active' : ''} onClick={() => handleFeedback(msg.id, false)}>
+                      <ThumbsDown size={13} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
 
           {isLoading && (
-            <div className="message assistant typing-indicator">
-              <em>Thinking...</em>
+            <div className="message-bubble-row assistant">
+              <div className="message-content-wrapper typing-bubble">
+                <span className="dot"></span>
+                <span className="dot"></span>
+                <span className="dot"></span>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="input-container">
-          <input
-            className="chat-input"
-            type="text"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isLoading ? 'Please wait for Clara to finish responding...' : 'Type your message here...'}
-            autoComplete="off"
-            disabled={isLoading}
-          />
-          <button type="button" onClick={handleSend} disabled={isLoading} className="icon-send-btn">
-            {isLoading ? <span className="spinner"></span> : <Send size={18} />}
-          </button>
+        <div className="chat-input-dock">
+          <div className="textarea-wrapper">
+            <textarea
+              ref={textareaRef}
+              className="chat-textarea-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={isLoading ? 'Clara is analyzing...' : 'Type your message to CLARA ... '}
+              rows={1}
+              disabled={isLoading}
+            />
+            <button type="button" onClick={handleSend} disabled={isLoading || !input.trim()} className="send-action-icon-btn">
+              {isLoading ? <span className="spinner-small"></span> : <Send size={18} />}
+            </button>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
