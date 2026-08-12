@@ -1,18 +1,31 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
-import { Send, Trash2, LogOut, MessageSquare, Sparkles, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X } from 'lucide-react';
+import remarkGfm from 'remark-gfm';
+
+import { Send, Trash2, LogOut, MessageSquare, Sparkles, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X, Paperclip, FileText } from 'lucide-react';
 import { useClaraChat } from '../hooks/useClaraChat';
 
 export default function ChatWindow() {
   const {
     messages,
+    
     input,
     setInput,
     handleSend,
     chatBoxRef,
     isLoading,
     isAuthLoading,
+    isSessionValidating,
+    activeView,
+    setActiveView,
+    isUploadingKnowledge,
+    knowledgeDocuments,
+    knowledgeDeleteTarget,
+    setKnowledgeDeleteTarget,
+    removingKnowledgeDocumentIds,
+    handleUploadKnowledge,
+    handleDeleteKnowledgeDocument,
     user,
     handleLogin,
     email,
@@ -34,6 +47,13 @@ export default function ChatWindow() {
     handleDeleteChat,
     handleRenameChat,
     handleFeedback,
+    activeDocuments,
+    isUploadingContext,
+    uploadingContextName,
+    contextUploadHelperText,
+    removingDocumentIds,
+    handleUploadContext,
+    removeContextDocument,
     statusMessage,
     setStatusMessage,
     authMode,
@@ -51,8 +71,11 @@ export default function ChatWindow() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingTitleValue, setEditingTitleValue] = useState('');
+  const [selectedKnowledgeFiles, setSelectedKnowledgeFiles] = useState([]);
   
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const knowledgeInputRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -79,6 +102,59 @@ export default function ChatWindow() {
     }
   };
 
+  const handleFileSelection = async (event) => {
+    const [selectedFile] = Array.from(event.target.files || []);
+    if (!selectedFile) return;
+
+    await handleUploadContext(selectedFile);
+    event.target.value = '';
+  };
+
+  const handleKnowledgeFileSelection = (event) => {
+    const nextFiles = Array.from(event.target.files || []);
+    if (!nextFiles.length) return;
+
+    setSelectedKnowledgeFiles((current) => {
+      const existingKeys = new Set(
+        current.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
+      );
+      const uniqueAdditions = nextFiles.filter(
+        (file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`)
+      );
+      return [...current, ...uniqueAdditions];
+    });
+
+    // Allow selecting additional files one by one in subsequent picks.
+    event.target.value = '';
+  };
+
+  const submitKnowledgeFiles = async () => {
+    if (!selectedKnowledgeFiles.length) return;
+
+    await handleUploadKnowledge(selectedKnowledgeFiles);
+    setSelectedKnowledgeFiles([]);
+    if (knowledgeInputRef.current) {
+      knowledgeInputRef.current.value = '';
+    }
+  };
+
+  if (isSessionValidating) {
+    return (
+      <div className="auth-viewport">
+        <div className="auth-glass-card animate-fade-in">
+          <div className="auth-header-brand">
+            <div className="brand-icon-wrapper">
+              <Sparkles className="w-7 h-7 text-indigo-600" />
+            </div>
+            <h1>CLARA</h1>
+            <p>Checking your saved session...</p>
+          </div>
+          <div className="spinner-center" aria-hidden="true"></div>
+        </div>
+      </div>
+    );
+  }
+
   // --- Authentication Full-Screen View ---
   if (!user) {
     return (
@@ -87,6 +163,7 @@ export default function ChatWindow() {
           <div className="auth-header-brand">
             <div className="brand-icon-wrapper">
               <Sparkles className="w-7 h-7 text-indigo-600" />
+              {/* <Flower2 className="clara-brand-icon" size={24} /> */}
             </div>
             <h1>CLARA</h1>
             <p>
@@ -216,6 +293,7 @@ export default function ChatWindow() {
           <div className="sidebar-brand">
             <div className="brand-logo-small">
               <Sparkles className="w-5 h-5 text-indigo-600" />
+              {/* <Flower2 className="clara-brand-icon" size={24} /> */}
             </div>
             <div>
               <h2>CLARA</h2>
@@ -226,10 +304,22 @@ export default function ChatWindow() {
           <button 
             type="button" 
             className="new-chat-action-btn"
-            onClick={handleCreateChat}
+            onClick={() => {
+              setActiveView('chat');
+              handleCreateChat();
+            }}
           >
             <Plus size={16} />
             <span>Add New Chat</span>
+          </button>
+
+          <button
+            type="button"
+            className="knowledge-action-btn"
+            onClick={() => setActiveView('knowledge')}
+          >
+            <FileText size={16} />
+            <span>Upload Knowledge</span>
           </button>
         </div>
 
@@ -285,7 +375,7 @@ export default function ChatWindow() {
                 </div>
               ) : (
                 <>
-                  <button type="button" className="chat-select-btn" onClick={() => setActiveChatId(chat.id)}>
+                  <button type="button" className="chat-select-btn" onClick={() => { setActiveView('chat'); setActiveChatId(chat.id); }}>
                     <MessageSquare size={15} />
                     <span className="chat-title-text">{chat.title || 'Untitled chat'}</span>
                   </button>
@@ -371,7 +461,157 @@ export default function ChatWindow() {
         </div>
       )}
 
+      {knowledgeDeleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal-card animate-scale-in">
+            <h3>Delete Knowledge File?</h3>
+            <p>
+              Are you sure you want to delete <strong>{knowledgeDeleteTarget.filename}</strong> from your shared knowledge library? This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setKnowledgeDeleteTarget(null)} className="modal-cancel-btn">Cancel</button>
+              <button
+                onClick={() => handleDeleteKnowledgeDocument(knowledgeDeleteTarget.id)}
+                className="modal-confirm-btn delete-trigger"
+                disabled={removingKnowledgeDocumentIds.includes(knowledgeDeleteTarget.id)}
+              >
+                {removingKnowledgeDocumentIds.includes(knowledgeDeleteTarget.id) ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="chat-main-container">
+        {activeView === 'knowledge' ? (
+          <div className="knowledge-workspace">
+            <header className="chat-header-bar knowledge-header-bar">
+              <div className="header-title-wrapper">
+                <h1>Knowledge Library</h1>
+                <p>Upload PDFs, DOCX files, and Images that Clara can search across all your chats.</p>
+              </div>
+              <button type="button" className="back-to-chat-btn" onClick={() => setActiveView('chat')}>
+                Back to chat
+              </button>
+            </header>
+
+            <section className="knowledge-panel-shell">
+              <div className="knowledge-upload-card">
+                {statusMessage && (
+                  <div className={`status-banner ${
+                    statusMessage.includes('uploaded') || statusMessage.includes('successfully')
+                      ? 'status-success'
+                      : 'status-error'
+                  }`}>
+                    <span>{statusMessage}</span>
+                    <button onClick={() => setStatusMessage('')} className="status-close-btn">&times;</button>
+                  </div>
+                )}
+
+                <div className="knowledge-upload-copy">
+                  <h3>Upload shared knowledge</h3>
+                  <p>
+                    Add reference files once and Clara will use them as shared knowledge in any chat for your account.You can keep uploading more files later without losing prior knowledge.
+                  </p>
+                </div>
+
+                <input
+                  ref={knowledgeInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.png,.jpg,.jpeg,.webp"
+                  multiple
+                  onChange={handleKnowledgeFileSelection}
+                  hidden
+                />
+
+                <div className="knowledge-upload-dropzone">
+                  <Paperclip size={18} />
+                  <div>
+                    <strong>Select knowledge files</strong>
+                    <p> You may select more than one file before uploading if needed.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="knowledge-select-btn"
+                    onClick={() => knowledgeInputRef.current?.click()}
+                    aria-label="Add knowledge file"
+                    title="Add file"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+
+                <p className="knowledge-upload-format-text">Accepted: PDF, DOCX, PNG, JPG, JPEG, WEBP</p>
+
+                {selectedKnowledgeFiles.length > 0 && (
+                  <div className="knowledge-file-list">
+                    {selectedKnowledgeFiles.map((file) => (
+                      <div key={`${file.name}-${file.size}`} className="knowledge-file-pill">
+                        <FileText size={14} />
+                        <span>{file.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="knowledge-upload-actions">
+                  <button
+                    type="button"
+                    className="knowledge-secondary-btn"
+                    onClick={() => {
+                      setSelectedKnowledgeFiles([]);
+                      if (knowledgeInputRef.current) knowledgeInputRef.current.value = '';
+                    }}
+                  >
+                    Clear selection
+                  </button>
+                  <button
+                    type="button"
+                    className="knowledge-primary-btn"
+                    onClick={submitKnowledgeFiles}
+                    disabled={isUploadingKnowledge || selectedKnowledgeFiles.length === 0}
+                  >
+                    {isUploadingKnowledge ? 'Uploading...' : 'Upload knowledge'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="knowledge-panel-notes">
+                <div className="knowledge-note-card">
+                  <div className="knowledge-section-title">Knowledge Files</div>
+                  {knowledgeDocuments.length > 0 ? (
+                    <div className="knowledge-document-list">
+                      {knowledgeDocuments.map((document) => (
+                        <div key={document.id} className="knowledge-document-row">
+                          <div className="knowledge-document-main">
+                            <FileText size={15} />
+                            <strong className="knowledge-document-name">{document.filename}</strong>
+                          </div>
+                          <button
+                            type="button"
+                            className="knowledge-delete-btn"
+                            onClick={() => setKnowledgeDeleteTarget(document)}
+                            disabled={removingKnowledgeDocumentIds.includes(document.id)}
+                            aria-label={`Delete ${document.filename}`}
+                          >
+                            {removingKnowledgeDocumentIds.includes(document.id) ? (
+                              '...'
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="knowledge-empty-state">No shared knowledge uploaded yet.</p>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <>
         <header className="chat-header-bar">
           <div className="header-title-wrapper">
             <h1>CLARA: AI Procurement Assistant</h1>
@@ -379,10 +619,24 @@ export default function ChatWindow() {
           </div>
         </header>
 
+        {statusMessage && (
+          <div className="chat-status-wrap">
+            <div className={`status-banner ${
+              statusMessage.includes('ready') || statusMessage.includes('Successfully') || statusMessage.includes('Welcome') || statusMessage.includes('created')
+                ? 'status-success'
+                : 'status-error'
+            }`}>
+              <span>{statusMessage}</span>
+              <button onClick={() => setStatusMessage('')} className="status-close-btn">&times;</button>
+            </div>
+          </div>
+        )}
+
         <div className="chat-messages-box" ref={chatBoxRef}>
           {messages.length === 0 && (
             <div className="chat-welcome-placeholder">
               <Sparkles className="w-12 h-12 text-indigo-400 mb-3 animate-pulse" />
+              {/* <Flower2 className="clara-brand-icon" size={24} /> */}
               <h3>How can I assist with your procurement needs today?</h3>
               {/* <p>Ask about supplier pricing benchmarks, draft negotiation strategies, or analyze contracts.</p> */}
             </div>
@@ -393,7 +647,7 @@ export default function ChatWindow() {
               <div className="message-content-wrapper">
                 {msg.role === 'assistant' ? (
                   <div className="markdown-body">
-                    <ReactMarkdown rehypePlugins={[rehypeRaw]}>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown rehypePlugins={[rehypeRaw]} remarkPlugins={[remarkGfm]} >{msg.content}</ReactMarkdown>
                   </div>
                 ) : (
                   <div className="plain-user-text">{msg.content}</div>
@@ -452,7 +706,53 @@ export default function ChatWindow() {
         </div>
 
         <div className="chat-input-dock">
+          {activeDocuments.length > 0 && (
+            <div className="context-chip-list">
+              {activeDocuments.map((document) => (
+                <div key={document.id} className="context-chip">
+                  <FileText size={14} />
+                  <span>{document.filename}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeContextDocument(document.id)}
+                    aria-label={`Remove ${document.filename}`}
+                    disabled={removingDocumentIds.includes(document.id)}
+                  >
+                    <span>{removingDocumentIds.includes(document.id) ? '...' : <X size={12} />}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="context-upload-meta-row">
+            <p className="context-upload-helper">{contextUploadHelperText}</p>
+            {isUploadingContext && (
+              <div className="context-upload-status" role="status" aria-live="polite">
+                <span className="context-upload-spinner" aria-hidden="true"></span>
+                <span>Indexing {uploadingContextName} for this chat...</span>
+              </div>
+            )}
+          </div>
+
           <div className="textarea-wrapper">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.png,.jpg,.jpeg,.webp"
+              onChange={handleFileSelection}
+              hidden
+            />
+            <button
+              type="button"
+              className="attach-context-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading || isUploadingContext}
+              title="Attach a PDF, Word document, or image"
+            >
+              <Paperclip size={16} />
+              <span>{isUploadingContext ? 'Indexing...' : 'Attach context'}</span>
+            </button>
             <textarea
               ref={textareaRef}
               className="chat-textarea-input"
@@ -461,13 +761,15 @@ export default function ChatWindow() {
               onKeyDown={handleKeyDown}
               placeholder={isLoading ? 'Clara is analyzing...' : 'Type your message to CLARA ... '}
               rows={1}
-              disabled={isLoading}
+              disabled={isLoading || isUploadingContext}
             />
-            <button type="button" onClick={handleSend} disabled={isLoading || !input.trim()} className="send-action-icon-btn">
+            <button type="button" onClick={handleSend} disabled={isLoading || isUploadingContext || !input.trim()} className="send-action-icon-btn">
               {isLoading ? <span className="spinner-small"></span> : <Send size={18} />}
             </button>
           </div>
-        </div>
+          </div>
+            </>
+          )}
       </main>
     </div>
   );
