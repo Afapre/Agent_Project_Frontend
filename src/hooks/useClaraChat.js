@@ -17,6 +17,9 @@ import {
   loginUser,
   deleteUser,
   updateChatTitle,
+  listPendingActions,
+  approveAction,
+  rejectAction,
 } from '../api/claraApi';
 import { addContextDocumentForChat, clearContextDocumentsForChat } from './contextState';
 
@@ -84,8 +87,13 @@ export function useClaraChat() {
   const [chatContextDocuments, setChatContextDocuments] = useState({});
   const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
   const [knowledgeDeleteTarget, setKnowledgeDeleteTarget] = useState(null);
+  const [contextDeleteTarget, setContextDeleteTarget] = useState(null);
   const [removingDocumentIds, setRemovingDocumentIds] = useState([]);
   const [removingKnowledgeDocumentIds, setRemovingKnowledgeDocumentIds] = useState([]);
+  const [pendingActions, setPendingActions] = useState([]);
+  const [actionProcessingId, setActionProcessingId] = useState(null);
+  const [editingActionId, setEditingActionId] = useState(null);
+  const [editActionPayload, setEditActionPayload] = useState('');
   const chatBoxRef = useRef(null);
 
   const setAuthModeAndClearStatus = (mode) => {
@@ -276,6 +284,15 @@ export function useClaraChat() {
     }
   };
 
+  const loadPendingActions = async (currentUserId, chatId = null) => {
+    try {
+      const actions = await listPendingActions({ userId: currentUserId, chatId });
+      setPendingActions(actions);
+    } catch {
+      setPendingActions([]);
+    }
+  };
+
   const loadChats = async (currentUserId) => {
     try {
       const nextChats = await listUserChats(currentUserId);
@@ -328,6 +345,17 @@ export function useClaraChat() {
       } catch (error) {
         if (!isCancelled) {
           setStatusMessage(error.message || 'Unable to load context documents.');
+        }
+      }
+
+      try {
+        const actions = await listPendingActions({ userId: user.id, chatId: activeChatId });
+        if (!isCancelled) {
+          setPendingActions(actions);
+        }
+      } catch {
+        if (!isCancelled) {
+          setPendingActions([]);
         }
       }
     };
@@ -451,7 +479,7 @@ export function useClaraChat() {
     }
   };
 
-  const handleUploadKnowledge = async (files) => {
+  const handleUploadKnowledge = async (files, relatedDocumentId) => {
     const fileList = Array.isArray(files) ? files.filter(Boolean) : [];
     if (!user || isUploadingKnowledge || fileList.length === 0) return null;
 
@@ -462,6 +490,7 @@ export function useClaraChat() {
       const response = await uploadKnowledgeFiles({
         files: fileList,
         userId: user.id,
+        relatedDocumentId: relatedDocumentId || undefined,
       });
 
       const successCount = response?.success?.length || 0;
@@ -504,6 +533,7 @@ export function useClaraChat() {
         ...current,
         [activeChatId]: (current[activeChatId] || []).filter((document) => document.id !== documentId),
       }));
+      setContextDeleteTarget(null);
       if (activeDocument?.filename) {
         setStatusMessage(`${activeDocument.filename} was removed from this chat.`);
       }
@@ -579,11 +609,48 @@ export function useClaraChat() {
 
       setMessages([...updatedMessages, assistantMessage]);
       setChatContextDocuments((current) => clearContextDocumentsForChat(current, currentChatId));
+      if (response.pending_actions?.length) {
+        setPendingActions(response.pending_actions);
+      } else {
+        await loadPendingActions(user.id, currentChatId);
+      }
       await loadChats(user.id);
     } catch (error) {
       setMessages([...updatedMessages, { role: 'error', content: error.message || 'Unable to reach backend.' }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleApproveAction = async (actionId, editPayload = null) => {
+    if (!user) return;
+    setActionProcessingId(actionId);
+    setStatusMessage('');
+    try {
+      await approveAction({ actionId, userId: user.id, editPayload });
+      setPendingActions((current) => current.filter((a) => a.id !== actionId));
+      setEditingActionId(null);
+      setEditActionPayload('');
+      setStatusMessage('Action approved and executed.');
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to approve action.');
+    } finally {
+      setActionProcessingId(null);
+    }
+  };
+
+  const handleRejectAction = async (actionId, reason = null) => {
+    if (!user) return;
+    setActionProcessingId(actionId);
+    setStatusMessage('');
+    try {
+      await rejectAction({ actionId, userId: user.id, reason });
+      setPendingActions((current) => current.filter((a) => a.id !== actionId));
+      setStatusMessage('Action rejected.');
+    } catch (error) {
+      setStatusMessage(error.message || 'Unable to reject action.');
+    } finally {
+      setActionProcessingId(null);
     }
   };
 
@@ -639,6 +706,8 @@ export function useClaraChat() {
     removingDocumentIds,
     handleUploadContext,
     removeContextDocument,
+    contextDeleteTarget,
+    setContextDeleteTarget,
     statusMessage,
     setStatusMessage,
     authMode,
@@ -646,5 +715,13 @@ export function useClaraChat() {
     handleDeleteAccount,
     showDeleteModal,
     setShowDeleteModal,
+    pendingActions,
+    actionProcessingId,
+    editingActionId,
+    setEditingActionId,
+    editActionPayload,
+    setEditActionPayload,
+    handleApproveAction,
+    handleRejectAction,
   };
 }

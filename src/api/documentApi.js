@@ -34,10 +34,13 @@ export async function deleteChatContextDocument({ chatId, documentId, userId }) 
   });
 }
 
-export async function uploadKnowledgeFiles({ files, userId }) {
+export async function uploadKnowledgeFiles({ files, userId, relatedDocumentId }) {
   const body = new FormData();
   files.forEach((file) => body.append('files', file));
   body.append('user_id', userId);
+  if (relatedDocumentId) {
+    body.append('related_document_id', relatedDocumentId);
+  }
 
   return request('/api/v1/documents/upload-knowledge', {
     method: 'POST',

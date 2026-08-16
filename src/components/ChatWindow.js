@@ -3,8 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 
-import { Send, Trash2, LogOut, MessageSquare, Sparkles, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X, Paperclip, FileText } from 'lucide-react';
+import { Send, Trash2, LogOut, MessageSquare, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X, Paperclip, FileText, Moon, Sun, Menu, Sparkles, Layers, ShieldAlert } from 'lucide-react';
 import { useClaraChat } from '../hooks/useClaraChat';
+import claraLogo from '../assets/clara-logo.png';
 
 export default function ChatWindow() {
   const {
@@ -54,6 +55,8 @@ export default function ChatWindow() {
     removingDocumentIds,
     handleUploadContext,
     removeContextDocument,
+    contextDeleteTarget,
+    setContextDeleteTarget,
     statusMessage,
     setStatusMessage,
     authMode,
@@ -63,6 +66,14 @@ export default function ChatWindow() {
     handleDeleteAccount,
     showDeleteModal,
     setShowDeleteModal,
+    pendingActions,
+    actionProcessingId,
+    editingActionId,
+    setEditingActionId,
+    editActionPayload,
+    setEditActionPayload,
+    handleApproveAction,
+    handleRejectAction,
   } = useClaraChat();
 
   const [playingIndex, setPlayingIndex] = useState(null);
@@ -72,7 +83,10 @@ export default function ChatWindow() {
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [selectedKnowledgeFiles, setSelectedKnowledgeFiles] = useState([]);
-  
+  const [amendmentTargetId, setAmendmentTargetId] = useState('');
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('clara_theme') === 'dark');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const knowledgeInputRef = useRef(null);
@@ -91,6 +105,10 @@ export default function ChatWindow() {
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 140)}px`;
     }
   }, [input]);
+
+  useEffect(() => {
+    localStorage.setItem('clara_theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -131,8 +149,9 @@ export default function ChatWindow() {
   const submitKnowledgeFiles = async () => {
     if (!selectedKnowledgeFiles.length) return;
 
-    await handleUploadKnowledge(selectedKnowledgeFiles);
+    await handleUploadKnowledge(selectedKnowledgeFiles, amendmentTargetId || undefined);
     setSelectedKnowledgeFiles([]);
+    setAmendmentTargetId('');
     if (knowledgeInputRef.current) {
       knowledgeInputRef.current.value = '';
     }
@@ -140,11 +159,11 @@ export default function ChatWindow() {
 
   if (isSessionValidating) {
     return (
-      <div className="auth-viewport">
+      <div className={`auth-viewport ${isDarkMode ? 'dark-mode' : ''}`}>
         <div className="auth-glass-card animate-fade-in">
           <div className="auth-header-brand">
             <div className="brand-icon-wrapper">
-              <Sparkles className="w-7 h-7 text-indigo-600" />
+              <img src={claraLogo} alt="CLARA logo" className="clara-logo-auth" />
             </div>
             <h1>CLARA</h1>
             <p>Checking your saved session...</p>
@@ -158,12 +177,11 @@ export default function ChatWindow() {
   // --- Authentication Full-Screen View ---
   if (!user) {
     return (
-      <div className="auth-viewport">
+      <div className={`auth-viewport ${isDarkMode ? 'dark-mode' : ''}`}>
         <div className="auth-glass-card animate-fade-in">
           <div className="auth-header-brand">
             <div className="brand-icon-wrapper">
-              <Sparkles className="w-7 h-7 text-indigo-600" />
-              {/* <Flower2 className="clara-brand-icon" size={24} /> */}
+              <img src={claraLogo} alt="CLARA logo" className="clara-logo-auth" />
             </div>
             <h1>CLARA</h1>
             <p>
@@ -285,20 +303,30 @@ export default function ChatWindow() {
     );
   }
 
-  // --- Main Full-Screen Application Chat View ---
+  // --- Main Full-Screen Application Dashboard View ---
   return (
-    <div className="app-viewport-shell">
-      <aside className="app-sidebar">
+    <div className={`app-viewport-shell dashboard-shell ${isDarkMode ? 'dark-mode' : ''}`}>
+      {isMobileNavOpen && (
+        <div className="mobile-nav-backdrop" onClick={() => setIsMobileNavOpen(false)} />
+      )}
+      <aside className={`app-sidebar ${isMobileNavOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-top-section">
           <div className="sidebar-brand">
             <div className="brand-logo-small">
-              <Sparkles className="w-5 h-5 text-indigo-600" />
-              {/* <Flower2 className="clara-brand-icon" size={24} /> */}
+              <img src={claraLogo} alt="CLARA logo" className="clara-logo-sidebar" />
             </div>
             <div>
               <h2>CLARA</h2>
               <span className="user-profile-badge">{user.first_name || user.name || 'User'}'s Workspace</span>
             </div>
+            <button
+              type="button"
+              className="mobile-nav-close-btn"
+              onClick={() => setIsMobileNavOpen(false)}
+              aria-label="Close navigation"
+            >
+              <X size={16} />
+            </button>
           </div>
 
           <button 
@@ -404,6 +432,14 @@ export default function ChatWindow() {
         </div>
 
         <div className="sidebar-footer-actions">
+          <button
+            type="button"
+            className="footer-btn theme-toggle-btn"
+            onClick={() => setIsDarkMode((current) => !current)}
+            title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
           <button onClick={() => setShowLogoutModal(true)} className="footer-btn logout-action">
             <LogOut size={15} /> Sign Out
           </button>
@@ -482,12 +518,44 @@ export default function ChatWindow() {
         </div>
       )}
 
+      {contextDeleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal-card animate-scale-in">
+            <h3>Remove Attached Document?</h3>
+            <p>
+              Are you sure you want to remove <strong>{contextDeleteTarget.filename}</strong> from this chat? This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setContextDeleteTarget(null)} className="modal-cancel-btn">Cancel</button>
+              <button
+                onClick={() => removeContextDocument(contextDeleteTarget.id)}
+                className="modal-confirm-btn delete-trigger"
+                disabled={removingDocumentIds.includes(contextDeleteTarget.id)}
+              >
+                {removingDocumentIds.includes(contextDeleteTarget.id) ? 'Removing...' : 'Yes, Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="chat-main-container">
         {activeView === 'knowledge' ? (
           <div className="knowledge-workspace">
             <header className="chat-header-bar knowledge-header-bar">
               <div className="header-title-wrapper">
-                <h1>Knowledge Library</h1>
+                <div className="header-brandline">
+                  <button
+                    type="button"
+                    className="mobile-nav-toggle-btn"
+                    onClick={() => setIsMobileNavOpen(true)}
+                    aria-label="Open navigation"
+                  >
+                    <Menu size={18} />
+                  </button>
+                  <img src={claraLogo} alt="CLARA logo" className="clara-logo-header" />
+                  <h1>Knowledge Library</h1>
+                </div>
                 <p>Upload PDFs, DOCX files, and Images that Clara can search across all your chats.</p>
               </div>
               <button type="button" className="back-to-chat-btn" onClick={() => setActiveView('chat')}>
@@ -554,6 +622,23 @@ export default function ChatWindow() {
                   </div>
                 )}
 
+                {knowledgeDocuments.length > 0 && (
+                  <label className="knowledge-amendment-select">
+                    <span>Is this an amendment to an existing file? (optional)</span>
+                    <select
+                      value={amendmentTargetId}
+                      onChange={(e) => setAmendmentTargetId(e.target.value)}
+                    >
+                      <option value="">No, this is a new document</option>
+                      {knowledgeDocuments.map((document) => (
+                        <option key={document.id} value={document.id}>
+                          Amends: {document.filename}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
                 <div className="knowledge-upload-actions">
                   <button
                     type="button"
@@ -586,6 +671,9 @@ export default function ChatWindow() {
                           <div className="knowledge-document-main">
                             <FileText size={15} />
                             <strong className="knowledge-document-name">{document.filename}</strong>
+                            {document.related_document_filename && (
+                              <span className="knowledge-amendment-badge">Amends: {document.related_document_filename}</span>
+                            )}
                           </div>
                           <button
                             type="button"
@@ -614,7 +702,18 @@ export default function ChatWindow() {
           <>
         <header className="chat-header-bar">
           <div className="header-title-wrapper">
-            <h1>CLARA: AI Procurement Assistant</h1>
+            <div className="header-brandline">
+              <button
+                type="button"
+                className="mobile-nav-toggle-btn"
+                onClick={() => setIsMobileNavOpen(true)}
+                aria-label="Open navigation"
+              >
+                <Menu size={18} />
+              </button>
+              <img src={claraLogo} alt="CLARA logo" className="clara-logo-header" />
+              <h1>CLARA: AI Procurement Assistant</h1>
+            </div>
             <p>An Advanced Procurement Processes Navigation Guide!</p>
           </div>
         </header>
@@ -635,8 +734,7 @@ export default function ChatWindow() {
         <div className="chat-messages-box" ref={chatBoxRef}>
           {messages.length === 0 && (
             <div className="chat-welcome-placeholder">
-              <Sparkles className="w-12 h-12 text-indigo-400 mb-3 animate-pulse" />
-              {/* <Flower2 className="clara-brand-icon" size={24} /> */}
+              <img src={claraLogo} alt="CLARA logo" className="clara-logo-welcome" />
               <h3>How can I assist with your procurement needs today?</h3>
               {/* <p>Ask about supplier pricing benchmarks, draft negotiation strategies, or analyze contracts.</p> */}
             </div>
@@ -697,6 +795,7 @@ export default function ChatWindow() {
           {isLoading && (
             <div className="message-bubble-row assistant">
               <div className="message-content-wrapper typing-bubble">
+                <img src={claraLogo} alt="CLARA logo" className="clara-logo-typing" />
                 <span className="dot"></span>
                 <span className="dot"></span>
                 <span className="dot"></span>
@@ -706,25 +805,6 @@ export default function ChatWindow() {
         </div>
 
         <div className="chat-input-dock">
-          {activeDocuments.length > 0 && (
-            <div className="context-chip-list">
-              {activeDocuments.map((document) => (
-                <div key={document.id} className="context-chip">
-                  <FileText size={14} />
-                  <span>{document.filename}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeContextDocument(document.id)}
-                    aria-label={`Remove ${document.filename}`}
-                    disabled={removingDocumentIds.includes(document.id)}
-                  >
-                    <span>{removingDocumentIds.includes(document.id) ? '...' : <X size={12} />}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           <div className="context-upload-meta-row">
             <p className="context-upload-helper">{contextUploadHelperText}</p>
             {isUploadingContext && (
@@ -771,6 +851,170 @@ export default function ChatWindow() {
             </>
           )}
       </main>
+
+      {activeView === 'chat' && (
+        <aside className="app-context-panel">
+          <div className="context-panel-section">
+            <div className="context-panel-title">
+              <Sparkles size={14} />
+              <span>Session Insights</span>
+            </div>
+            <h3 className="context-panel-chat-name">
+              {chats.find((chat) => chat.id === activeChatId)?.title || 'Untitled chat'}
+            </h3>
+            <div className="context-stat-grid">
+              <div className="context-stat-card">
+                <span className="context-stat-value">{messages.length}</span>
+                <span className="context-stat-label">Messages</span>
+              </div>
+              <div className="context-stat-card">
+                <span className="context-stat-value">{activeDocuments.length}</span>
+                <span className="context-stat-label">Attached Files</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="context-panel-section">
+            <div className="context-panel-title">
+              <ShieldAlert size={14} />
+              <span>Action Queue</span>
+              {pendingActions.length > 0 && (
+                <span className="action-queue-badge">{pendingActions.length}</span>
+              )}
+            </div>
+            {pendingActions.length > 0 ? (
+              <div className="action-queue-list">
+                {pendingActions.map((action) => (
+                  <div key={action.id} className={`action-queue-card tier-${action.authority_tier}`}>
+                    <div className="action-queue-header">
+                      <span className="action-type-label">{action.action_type.replace(/_/g, ' ')}</span>
+                      <span className={`authority-badge ${action.authority_tier}`}>
+                        {action.authority_tier === 'binding' ? 'Manager sign-off' : action.authority_tier === 'standard' ? 'Confirmation' : 'Routine'}
+                      </span>
+                    </div>
+                    {action.reasoning && (
+                      <p className="action-reasoning">{action.reasoning}</p>
+                    )}
+                    {action.source_documents?.length > 0 && (
+                      <div className="action-source-docs">
+                        {action.source_documents.map((doc) => (
+                          <span key={doc} className="action-doc-chip">{doc}</span>
+                        ))}
+                      </div>
+                    )}
+                    {action.payload && (
+                      <details className="action-payload-details">
+                        <summary>View details</summary>
+                        <pre>{JSON.stringify(action.payload, null, 2)}</pre>
+                      </details>
+                    )}
+                    {editingActionId === action.id ? (
+                      <div className="action-edit-area">
+                        <textarea
+                          value={editActionPayload}
+                          onChange={(e) => setEditActionPayload(e.target.value)}
+                          placeholder="Edit action payload (JSON)..."
+                          rows={4}
+                        />
+                        <div className="action-btn-row">
+                          <button
+                            type="button"
+                            className="action-btn approve"
+                            disabled={actionProcessingId === action.id}
+                            onClick={() => {
+                              try {
+                                const parsed = JSON.parse(editActionPayload);
+                                handleApproveAction(action.id, parsed);
+                              } catch {
+                                handleApproveAction(action.id);
+                              }
+                            }}
+                          >
+                            <Check size={14} /> Save & Approve
+                          </button>
+                          <button type="button" className="action-btn cancel" onClick={() => { setEditingActionId(null); setEditActionPayload(''); }}>
+                            <X size={14} /> Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="action-btn-row">
+                        <button
+                          type="button"
+                          className="action-btn approve"
+                          disabled={actionProcessingId === action.id}
+                          onClick={() => handleApproveAction(action.id)}
+                        >
+                          {actionProcessingId === action.id ? '...' : <><Check size={14} /> Approve</>}
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn edit"
+                          disabled={actionProcessingId === action.id}
+                          onClick={() => {
+                            setEditingActionId(action.id);
+                            setEditActionPayload(JSON.stringify(action.payload, null, 2));
+                          }}
+                        >
+                          <Edit2 size={14} /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn reject"
+                          disabled={actionProcessingId === action.id}
+                          onClick={() => handleRejectAction(action.id)}
+                        >
+                          <X size={14} /> Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="context-panel-empty">No pending actions. Clara will queue binding actions here for your approval.</p>
+            )}
+          </div>
+
+          <div className="context-panel-section">
+            <div className="context-panel-title">
+              <FileText size={14} />
+              <span>Attached Documents</span>
+            </div>
+            {activeDocuments.length > 0 ? (
+              <div className="context-panel-doc-list">
+                {activeDocuments.map((document) => (
+                  <div key={document.id} className="context-panel-doc-row">
+                    <FileText size={14} />
+                    <span className="context-panel-doc-name">{document.filename}</span>
+                    <button
+                      type="button"
+                      onClick={() => setContextDeleteTarget(document)}
+                      disabled={removingDocumentIds.includes(document.id)}
+                      aria-label={`Remove ${document.filename}`}
+                    >
+                      {removingDocumentIds.includes(document.id) ? '...' : <X size={13} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="context-panel-empty">No files attached to this chat yet. Use "Attach context" below the message box.</p>
+            )}
+          </div>
+
+          <div className="context-panel-section context-panel-shortcut">
+            <div className="context-panel-title">
+              <FileText size={14} />
+              <span>Knowledge Library</span>
+            </div>
+            <p className="context-panel-empty">Manage reference files shared across all your chats.</p>
+            <button type="button" className="context-panel-link-btn" onClick={() => setActiveView('knowledge')}>
+              Open library
+            </button>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }
