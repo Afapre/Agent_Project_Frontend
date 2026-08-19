@@ -3,8 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 
-import { Send, Trash2, LogOut, MessageSquare, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X, Paperclip, FileText, Moon, Sun, Menu, Sparkles, Layers, ShieldAlert } from 'lucide-react';
+import { Send, Trash2, LogOut, MessageSquare, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X, Paperclip, FileText, Moon, Sun, Menu, Sparkles, Layers, ShieldAlert, BarChart3 } from 'lucide-react';
 import { useClaraChat } from '../hooks/useClaraChat';
+import InventoryDashboard from './InventoryDashboard';
 import claraLogo from '../assets/clara-logo.png';
 
 export default function ChatWindow() {
@@ -348,6 +349,15 @@ export default function ChatWindow() {
           >
             <FileText size={16} />
             <span>Upload Knowledge</span>
+          </button>
+
+          <button
+            type="button"
+            className="inventory-action-btn"
+            onClick={() => setActiveView('inventory')}
+          >
+            <BarChart3 size={16} />
+            <span>Inventory Forecast</span>
           </button>
         </div>
 
@@ -698,6 +708,8 @@ export default function ChatWindow() {
               </div>
             </section>
           </div>
+        ) : activeView === 'inventory' ? (
+          <InventoryDashboard onOpenNav={() => setIsMobileNavOpen(true)} />
         ) : (
           <>
         <header className="chat-header-bar">
