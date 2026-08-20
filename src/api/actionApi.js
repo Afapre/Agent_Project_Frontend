@@ -22,6 +22,12 @@ export function rejectAction({ actionId, userId, reason = null }) {
   });
 }
 
+export function listAllActions({ userId, status = null, limit = 200 }) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set('status', status);
+  return request(`/api/v1/chat/users/${userId}/actions?${params}`);
+}
+
 export function getAuditLog({ userId, chatId = null, limit = 50 }) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (chatId) params.set('chat_id', chatId);

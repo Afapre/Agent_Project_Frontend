@@ -94,6 +94,7 @@ export function useClaraChat() {
   const [actionProcessingId, setActionProcessingId] = useState(null);
   const [editingActionId, setEditingActionId] = useState(null);
   const [editActionPayload, setEditActionPayload] = useState('');
+  const [viewingActionId, setViewingActionId] = useState(null);
   const chatBoxRef = useRef(null);
 
   const setAuthModeAndClearStatus = (mode) => {
@@ -631,6 +632,7 @@ export function useClaraChat() {
       setPendingActions((current) => current.filter((a) => a.id !== actionId));
       setEditingActionId(null);
       setEditActionPayload('');
+      setViewingActionId(null);
       setStatusMessage('Action approved and executed.');
     } catch (error) {
       setStatusMessage(error.message || 'Unable to approve action.');
@@ -646,6 +648,7 @@ export function useClaraChat() {
     try {
       await rejectAction({ actionId, userId: user.id, reason });
       setPendingActions((current) => current.filter((a) => a.id !== actionId));
+      setViewingActionId(null);
       setStatusMessage('Action rejected.');
     } catch (error) {
       setStatusMessage(error.message || 'Unable to reject action.');
@@ -721,6 +724,8 @@ export function useClaraChat() {
     setEditingActionId,
     editActionPayload,
     setEditActionPayload,
+    viewingActionId,
+    setViewingActionId,
     handleApproveAction,
     handleRejectAction,
   };

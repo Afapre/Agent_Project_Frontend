@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { Send, Trash2, LogOut, MessageSquare, Volume2, Pause, ThumbsUp, ThumbsDown, UserX, Plus, Edit2, Check, X, Paperclip, FileText, Moon, Sun, Menu, Sparkles, Layers, ShieldAlert, BarChart3 } from 'lucide-react';
 import { useClaraChat } from '../hooks/useClaraChat';
 import InventoryDashboard from './InventoryDashboard';
+import ActionQueueManager from './ActionQueueManager';
 import claraLogo from '../assets/clara-logo.png';
 
 export default function ChatWindow() {
@@ -73,6 +74,8 @@ export default function ChatWindow() {
     setEditingActionId,
     editActionPayload,
     setEditActionPayload,
+    viewingActionId,
+    setViewingActionId,
     handleApproveAction,
     handleRejectAction,
   } = useClaraChat();
@@ -194,7 +197,7 @@ export default function ChatWindow() {
 
           {statusMessage && (
             <div className={`status-banner ${
-              statusMessage.includes('Successfully') || statusMessage.includes('created') || statusMessage.includes('Welcome')
+              statusMessage.includes('Successfully') || statusMessage.includes('created') || statusMessage.includes('Welcome') || statusMessage.includes('approved and executed')
                 ? 'status-success' 
                 : 'status-error'
             }`}>
@@ -358,6 +361,15 @@ export default function ChatWindow() {
           >
             <BarChart3 size={16} />
             <span>Inventory Forecast</span>
+          </button>
+
+          <button
+            type="button"
+            className="inventory-action-btn"
+            onClick={() => setActiveView('actions')}
+          >
+            <ShieldAlert size={16} />
+            <span>Action Queue Manager</span>
           </button>
         </div>
 
@@ -549,6 +561,119 @@ export default function ChatWindow() {
         </div>
       )}
 
+      {viewingActionId && (() => {
+        const actionIndex = pendingActions.findIndex((a) => a.id === viewingActionId);
+        const action = pendingActions[actionIndex];
+        if (!action) return null;
+
+        return (
+          <div className="modal-backdrop" onClick={() => { setViewingActionId(null); setEditingActionId(null); setEditActionPayload(''); }}>
+            <div className="modal-card action-detail-card animate-scale-in" onClick={(e) => e.stopPropagation()}>
+              <div className="action-detail-header">
+                <h3>Action Details — Queue ID: {actionIndex + 1}</h3>
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  onClick={() => { setViewingActionId(null); setEditingActionId(null); setEditActionPayload(''); }}
+                  aria-label="Close details"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="action-detail-body">
+                <div className="action-detail-row">
+                  <span className="action-type-label">{action.action_type.replace(/_/g, ' ')}</span>
+                  <span className={`authority-badge ${action.authority_tier}`}>
+                    {action.authority_tier === 'binding' ? 'Manager sign-off' : action.authority_tier === 'standard' ? 'Confirmation' : 'Routine'}
+                  </span>
+                </div>
+
+                {action.reasoning && (
+                  <p className="action-reasoning">{action.reasoning}</p>
+                )}
+
+                {action.source_documents?.length > 0 && (
+                  <div className="action-source-docs">
+                    {action.source_documents.map((doc) => (
+                      <span key={doc} className="action-doc-chip">{doc}</span>
+                    ))}
+                  </div>
+                )}
+
+                {action.payload && (
+                  <details className="action-payload-details" open>
+                    <summary>Full payload</summary>
+                    <pre>{JSON.stringify(action.payload, null, 2)}</pre>
+                  </details>
+                )}
+
+                {editingActionId === action.id ? (
+                  <div className="action-edit-area">
+                    <textarea
+                      value={editActionPayload}
+                      onChange={(e) => setEditActionPayload(e.target.value)}
+                      placeholder="Edit action payload (JSON)..."
+                      rows={8}
+                    />
+                    <div className="action-btn-row">
+                      <button
+                        type="button"
+                        className="action-btn approve"
+                        disabled={actionProcessingId === action.id}
+                        onClick={() => {
+                          try {
+                            const parsed = JSON.parse(editActionPayload);
+                            handleApproveAction(action.id, parsed);
+                          } catch {
+                            handleApproveAction(action.id);
+                          }
+                        }}
+                      >
+                        <Check size={14} /> Save & Approve
+                      </button>
+                      <button type="button" className="action-btn cancel" onClick={() => { setEditingActionId(null); setEditActionPayload(''); }}>
+                        <X size={14} /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="action-btn-row">
+                    <button
+                      type="button"
+                      className="action-btn approve"
+                      disabled={actionProcessingId === action.id}
+                      onClick={() => handleApproveAction(action.id)}
+                    >
+                      {actionProcessingId === action.id ? '...' : <><Check size={14} /> Approve</>}
+                    </button>
+                    <button
+                      type="button"
+                      className="action-btn edit"
+                      disabled={actionProcessingId === action.id}
+                      onClick={() => {
+                        setEditingActionId(action.id);
+                        setEditActionPayload(JSON.stringify(action.payload, null, 2));
+                      }}
+                    >
+                      <Edit2 size={14} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="action-btn reject"
+                      disabled={actionProcessingId === action.id}
+                      onClick={() => handleRejectAction(action.id)}
+                    >
+                      <X size={14} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <main className="chat-main-container">
         {activeView === 'knowledge' ? (
           <div className="knowledge-workspace">
@@ -577,7 +702,7 @@ export default function ChatWindow() {
               <div className="knowledge-upload-card">
                 {statusMessage && (
                   <div className={`status-banner ${
-                    statusMessage.includes('uploaded') || statusMessage.includes('successfully')
+                    statusMessage.includes('uploaded') || statusMessage.includes('successfully') || statusMessage.includes('approved and executed')
                       ? 'status-success'
                       : 'status-error'
                   }`}>
@@ -710,6 +835,8 @@ export default function ChatWindow() {
           </div>
         ) : activeView === 'inventory' ? (
           <InventoryDashboard onOpenNav={() => setIsMobileNavOpen(true)} />
+        ) : activeView === 'actions' ? (
+          <ActionQueueManager userId={user?.id} onOpenNav={() => setIsMobileNavOpen(true)} />
         ) : (
           <>
         <header className="chat-header-bar">
@@ -733,7 +860,7 @@ export default function ChatWindow() {
         {statusMessage && (
           <div className="chat-status-wrap">
             <div className={`status-banner ${
-              statusMessage.includes('ready') || statusMessage.includes('Successfully') || statusMessage.includes('Welcome') || statusMessage.includes('created')
+              statusMessage.includes('ready') || statusMessage.includes('Successfully') || statusMessage.includes('Welcome') || statusMessage.includes('created') || statusMessage.includes('approved and executed')
                 ? 'status-success'
                 : 'status-error'
             }`}>
@@ -896,90 +1023,27 @@ export default function ChatWindow() {
             </div>
             {pendingActions.length > 0 ? (
               <div className="action-queue-list">
-                {pendingActions.map((action) => (
+                {pendingActions.map((action, index) => (
                   <div key={action.id} className={`action-queue-card tier-${action.authority_tier}`}>
                     <div className="action-queue-header">
-                      <span className="action-type-label">{action.action_type.replace(/_/g, ' ')}</span>
+                      <span className="action-queue-id">Queue ID: {index + 1}</span>
                       <span className={`authority-badge ${action.authority_tier}`}>
                         {action.authority_tier === 'binding' ? 'Manager sign-off' : action.authority_tier === 'standard' ? 'Confirmation' : 'Routine'}
                       </span>
                     </div>
+                    <span className="action-type-label">{action.action_type.replace(/_/g, ' ')}</span>
                     {action.reasoning && (
-                      <p className="action-reasoning">{action.reasoning}</p>
+                      <p className="action-reasoning action-reasoning-clamped">{action.reasoning}</p>
                     )}
-                    {action.source_documents?.length > 0 && (
-                      <div className="action-source-docs">
-                        {action.source_documents.map((doc) => (
-                          <span key={doc} className="action-doc-chip">{doc}</span>
-                        ))}
-                      </div>
-                    )}
-                    {action.payload && (
-                      <details className="action-payload-details">
-                        <summary>View details</summary>
-                        <pre>{JSON.stringify(action.payload, null, 2)}</pre>
-                      </details>
-                    )}
-                    {editingActionId === action.id ? (
-                      <div className="action-edit-area">
-                        <textarea
-                          value={editActionPayload}
-                          onChange={(e) => setEditActionPayload(e.target.value)}
-                          placeholder="Edit action payload (JSON)..."
-                          rows={4}
-                        />
-                        <div className="action-btn-row">
-                          <button
-                            type="button"
-                            className="action-btn approve"
-                            disabled={actionProcessingId === action.id}
-                            onClick={() => {
-                              try {
-                                const parsed = JSON.parse(editActionPayload);
-                                handleApproveAction(action.id, parsed);
-                              } catch {
-                                handleApproveAction(action.id);
-                              }
-                            }}
-                          >
-                            <Check size={14} /> Save & Approve
-                          </button>
-                          <button type="button" className="action-btn cancel" onClick={() => { setEditingActionId(null); setEditActionPayload(''); }}>
-                            <X size={14} /> Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="action-btn-row">
-                        <button
-                          type="button"
-                          className="action-btn approve"
-                          disabled={actionProcessingId === action.id}
-                          onClick={() => handleApproveAction(action.id)}
-                        >
-                          {actionProcessingId === action.id ? '...' : <><Check size={14} /> Approve</>}
-                        </button>
-                        <button
-                          type="button"
-                          className="action-btn edit"
-                          disabled={actionProcessingId === action.id}
-                          onClick={() => {
-                            setEditingActionId(action.id);
-                            setEditActionPayload(JSON.stringify(action.payload, null, 2));
-                          }}
-                        >
-                          <Edit2 size={14} /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="action-btn reject"
-                          disabled={actionProcessingId === action.id}
-                          onClick={() => handleRejectAction(action.id)}
-                        >
-                          <X size={14} /> Reject
-                        </button>
-                      </div>
-                    )}
+                    <div className="action-btn-row">
+                      <button
+                        type="button"
+                        className="action-btn view-details"
+                        onClick={() => setViewingActionId(action.id)}
+                      >
+                        View Details
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
