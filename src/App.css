@@ -911,6 +911,9 @@ body, html {
   color: #1e293b;
   border: 1px solid #e2e8f0;
   border-bottom-left-radius: 4px;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .markdown-body p {
@@ -1385,6 +1388,11 @@ body, html {
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 0.75rem;
   resize: vertical;
+}
+
+.action-payload-editor {
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 .action-btn-row {
@@ -2301,6 +2309,11 @@ body, html {
 .action-status-badge.status-rejected {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.action-status-badge.status-failed {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .action-detail-panel-shell {

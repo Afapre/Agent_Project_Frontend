@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Menu, RefreshCw, ShieldAlert, CheckCircle2, XCircle, Clock, PenSquare, Zap } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Menu, RefreshCw, ShieldAlert, CheckCircle2, XCircle, Clock, PenSquare, Zap, AlertTriangle } from 'lucide-react';
 import { listAllActions, approveAction, rejectAction } from '../api/actionApi';
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'edited', label: 'Edited' },
-  { value: 'executed', label: 'Executed' },
-  { value: 'rejected', label: 'Rejected' },
+  { value: 'approved_executed', label: 'Approved/Executed' },
+  { value: 'failed', label: 'Failed' },
 ];
+
+// Statuses grouped under the combined "Approved/Executed" filter tab.
+const APPROVED_EXECUTED_STATUSES = ['approved', 'edited', 'executed'];
 
 const STATUS_META = {
   pending: { className: 'status-pending', Icon: Clock, label: 'Pending' },
@@ -17,7 +18,14 @@ const STATUS_META = {
   edited: { className: 'status-edited', Icon: PenSquare, label: 'Edited' },
   executed: { className: 'status-executed', Icon: Zap, label: 'Executed' },
   rejected: { className: 'status-rejected', Icon: XCircle, label: 'Rejected' },
+  failed: { className: 'status-failed', Icon: AlertTriangle, label: 'Failed' },
 };
+
+function matchesStatusFilter(status, filterValue) {
+  if (filterValue === 'all') return true;
+  if (filterValue === 'approved_executed') return APPROVED_EXECUTED_STATUSES.includes(status);
+  return status === filterValue;
+}
 
 export default function ActionQueueManager({ userId, onOpenNav }) {
   const [actions, setActions] = useState([]);
@@ -27,24 +35,32 @@ export default function ActionQueueManager({ userId, onOpenNav }) {
   const [error, setError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [editingActionId, setEditingActionId] = useState(null);
+  const [editPayloadText, setEditPayloadText] = useState('');
+  const [editPayloads, setEditPayloads] = useState({});
 
   const loadActions = useCallback(async () => {
     if (!userId) return;
     setIsLoading(true);
     setError('');
     try {
-      const data = await listAllActions({ userId, status: statusFilter === 'all' ? null : statusFilter });
+      const data = await listAllActions({ userId, status: null });
       setActions(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message || 'Failed to load action history.');
     } finally {
       setIsLoading(false);
     }
-  }, [userId, statusFilter]);
+  }, [userId]);
 
   useEffect(() => {
     loadActions();
   }, [loadActions]);
+
+  const filteredActions = useMemo(
+    () => actions.filter((a) => matchesStatusFilter(a.status, statusFilter)),
+    [actions, statusFilter]
+  );
 
   const selectedAction = actions.find((a) => a.id === selectedActionId) || null;
 
@@ -52,7 +68,12 @@ export default function ActionQueueManager({ userId, onOpenNav }) {
     setProcessingId(actionId);
     setError('');
     try {
-      await approveAction({ actionId, userId });
+      await approveAction({ actionId, userId, editPayload: editPayloads[actionId] || null });
+      setEditPayloads((prev) => {
+        const next = { ...prev };
+        delete next[actionId];
+        return next;
+      });
       await loadActions();
     } catch (err) {
       setError(err.message || 'Unable to approve action.');
@@ -73,6 +94,27 @@ export default function ActionQueueManager({ userId, onOpenNav }) {
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const handleStartEdit = (action) => {
+    setError('');
+    setEditingActionId(action.id);
+    setEditPayloadText(JSON.stringify(editPayloads[action.id] || action.payload, null, 2));
+  };
+
+  const handleSaveEdit = (actionId) => {
+    try {
+      const parsed = JSON.parse(editPayloadText);
+      setEditPayloads((prev) => ({ ...prev, [actionId]: parsed }));
+      setEditingActionId(null);
+      setError('');
+    } catch (err) {
+      setError('Invalid JSON payload. Please fix it before saving.');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingActionId(null);
   };
 
   return (
@@ -121,10 +163,10 @@ export default function ActionQueueManager({ userId, onOpenNav }) {
         <div className="action-queue-manager-list">
           {isLoading ? (
             <p className="inventory-empty-state">Loading action history...</p>
-          ) : actions.length === 0 ? (
+          ) : filteredActions.length === 0 ? (
             <p className="inventory-empty-state">No actions found for this filter.</p>
           ) : (
-            actions.map((action) => {
+            filteredActions.map((action) => {
               const meta = STATUS_META[action.status] || STATUS_META.pending;
               const StatusIcon = meta.Icon;
               return (
@@ -190,7 +232,7 @@ export default function ActionQueueManager({ userId, onOpenNav }) {
 
               <details className="action-payload-details">
                 <summary>Payload</summary>
-                <pre>{JSON.stringify(selectedAction.edit_payload || selectedAction.payload, null, 2)}</pre>
+                <pre>{JSON.stringify(editPayloads[selectedAction.id] || selectedAction.edit_payload || selectedAction.payload, null, 2)}</pre>
               </details>
 
               {selectedAction.execution_result && (
@@ -202,30 +244,67 @@ export default function ActionQueueManager({ userId, onOpenNav }) {
 
               {selectedAction.status === 'pending' && (
                 <div className="action-edit-area">
-                  <textarea
-                    rows={2}
-                    placeholder="Optional rejection reason..."
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                  />
-                  <div className="action-btn-row">
-                    <button
-                      type="button"
-                      className="action-btn approve"
-                      disabled={processingId === selectedAction.id}
-                      onClick={() => handleApprove(selectedAction.id)}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="action-btn reject"
-                      disabled={processingId === selectedAction.id}
-                      onClick={() => handleReject(selectedAction.id)}
-                    >
-                      Reject
-                    </button>
-                  </div>
+                  {editingActionId === selectedAction.id ? (
+                    <>
+                      <textarea
+                        rows={8}
+                        className="action-payload-editor"
+                        value={editPayloadText}
+                        onChange={(e) => setEditPayloadText(e.target.value)}
+                      />
+                      <div className="action-btn-row">
+                        <button
+                          type="button"
+                          className="action-btn approve"
+                          onClick={() => handleSaveEdit(selectedAction.id)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn cancel"
+                          onClick={handleCancelEdit}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <textarea
+                        rows={2}
+                        placeholder="Optional rejection reason..."
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                      />
+                      <div className="action-btn-row">
+                        <button
+                          type="button"
+                          className="action-btn approve"
+                          disabled={processingId === selectedAction.id}
+                          onClick={() => handleApprove(selectedAction.id)}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn edit"
+                          disabled={processingId === selectedAction.id}
+                          onClick={() => handleStartEdit(selectedAction)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn reject"
+                          disabled={processingId === selectedAction.id}
+                          onClick={() => handleReject(selectedAction.id)}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
