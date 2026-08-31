@@ -1,70 +1,67 @@
-# Getting Started with Create React App
+# CLARA Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+The CLARA frontend is a React application for the AI procurement assistant. It provides authentication, multi-chat conversations, document and knowledge-base uploads, action approval, audit history, inventory forecasting, message feedback, and optional audio playback.
 
-## Available Scripts
+## Prerequisites
 
-In the project directory, you can run:
+- Node.js 20 or later
+- npm
+- A running CLARA backend
 
-### `npm start`
+## Setup
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+1. Install dependencies:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+   ```powershell
+   npm install
+   ```
 
-### `npm test`
+2. Create a `.env` file in this directory and point it at the backend:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+   ```dotenv
+   REACT_APP_CHAT_ENDPOINT=http://localhost:8000
+   ```
 
-### `npm run build`
+3. Start the development server:
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+   ```powershell
+   npm start
+   ```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+The application opens at `http://localhost:3000` by default. The backend must allow requests from the frontend origin; the included backend development configuration enables CORS.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Scripts
 
-### `npm run eject`
+- `npm start` starts the Create React App development server and loads `.env`.
+- `npm test` runs the React test suite.
+- `npm run build` creates an optimized production build in `build/`.
+- `npm run eject` ejects the Create React App configuration; this is irreversible.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Application Features
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- Register, sign in, sign out, and delete an account.
+- Create, rename, select, and delete chat conversations.
+- Send procurement requests, view message history, and rate assistant responses.
+- Upload documents to a chat as temporary context or to a reusable knowledge base.
+- Review, edit, approve, or reject pending agent actions and inspect audit activity.
+- View inventory forecasts, trends, and products requiring attention.
+- Switch between light and dark themes and use the responsive mobile navigation.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Project Structure
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+- `src/App.js` renders the primary application shell.
+- `src/components/ChatWindow.js` contains the chat-focused user interface and view navigation.
+- `src/components/InventoryDashboard.js` and `src/components/ActionQueueManager.js` present inventory and action workflows.
+- `src/hooks/useClaraChat.js` coordinates client state and application actions.
+- `src/api/` contains the HTTP client and modules for chat, messages, users, documents, actions, and inventory endpoints.
+- `src/assets/` contains application branding assets.
 
-## Learn More
+## Backend API Configuration
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+`REACT_APP_CHAT_ENDPOINT` is the only required frontend environment variable. It is used as the base URL for all requests, so it must not include a trailing slash.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+For a deployed application, build with the deployed backend URL in `.env` before running `npm run build`:
 
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+```dotenv
+REACT_APP_CHAT_ENDPOINT=https://api.example.com
+```
